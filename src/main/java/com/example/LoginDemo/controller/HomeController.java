@@ -13,13 +13,19 @@ public class HomeController {
     private static final Logger logger = LoggerFactory.getLogger(HomeController.class);
 
     /**
-     * Redirects to the index page.
+     * Handles the root URL ("/") and redirects to the index page.
      *
      * @return a redirect string to index.html
      */
     @GetMapping("/")
     public String home() {
-        logger.info("Redirecting to index.html");
-        return "redirect:/index.html";
+        try {
+            logger.debug("Processing home page redirection.");
+            logger.info("Redirecting to index.html");
+            return "redirect:/index.html";
+        } catch (Exception e) {
+            logger.error("Error while redirecting to index.html: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to redirect to the home page.");
+        }
     }
 }
