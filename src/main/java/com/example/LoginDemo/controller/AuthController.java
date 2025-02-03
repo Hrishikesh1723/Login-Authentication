@@ -4,9 +4,13 @@ import com.example.LoginDemo.service.EmailService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.example.LoginDemo.config.JwtUtil;
 import com.example.LoginDemo.service.AuthService;
+
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -46,18 +50,61 @@ public class AuthController {
         logger.info("Login attempt - Email: {}, BrowserId: {}", email, browserId);
 
         if (authService.isValidEmail(email)) {
-            String token = userTokens.get(email);
-            if (token == null || !jwtUtil.isValidToken(token)) {
-                token = jwtUtil.generateToken(email);
-                userTokens.put(email, token);
-                userCounters.putIfAbsent(email, 0);
-            }
+            AuthService.UserInfo userInfo = authService.getUserInfo(email);
+            String token = jwtUtil.generateToken(email, userInfo.getRole());
+            userTokens.put(email, token);
+            userCounters.putIfAbsent(email, 0);
             emailService.sendMagicLink(email, token);
 
-            return new LoginResponse(null, email, null, userCounters.get(email), false, "Email sent successfully");
+            return new LoginResponse(null, email, null, userCounters.get(email),
+                    false, "Email sent successfully", userInfo.getRole());
         }
         logger.warn("Invalid email login attempt: {}", email);
         throw new IllegalArgumentException("Invalid email format.");
+    }
+
+    @PostMapping("/add-user")
+    public ResponseEntity<?> addUser(@RequestBody AddUserRequest request, @RequestHeader("Authorization") String token) {
+        if (!token.startsWith("Bearer ")) {
+            return ResponseEntity.badRequest().body("Invalid token format");
+        }
+
+        String jwtToken = token.substring(7);
+        if (!jwtUtil.isValidToken(jwtToken) || !"ADMIN".equals(jwtUtil.extractRole(jwtToken))) {
+            return ResponseEntity.status(403).body("Unauthorized access");
+        }
+
+        try {
+            authService.addUser(request.getEmail(), request.getUsername(), "USER");
+            return ResponseEntity.ok("User added successfully");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/users")
+    public ResponseEntity<?> getAllUsers(@RequestHeader("Authorization") String token) {
+        if (!token.startsWith("Bearer ")) {
+            return ResponseEntity.badRequest().body("Invalid token format");
+        }
+
+        String jwtToken = token.substring(7);
+        if (!jwtUtil.isValidToken(jwtToken) || !"ADMIN".equals(jwtUtil.extractRole(jwtToken))) {
+            return ResponseEntity.status(403).body("Unauthorized access");
+        }
+
+        Map<String, Map<String, Object>> userDetails = new HashMap<>();
+        authService.getAllUsers().forEach((email, userInfo) -> {
+            if (!"admin".equalsIgnoreCase(userInfo.getRole())) { // Exclude admin role
+                Map<String, Object> details = new HashMap<>();
+                details.put("username", userInfo.getUsername());
+                details.put("role", userInfo.getRole());
+                details.put("counter", userCounters.getOrDefault(email, 0));
+                userDetails.put(email, details);
+            }
+        });
+
+        return ResponseEntity.ok(userDetails);
     }
 
     /**
@@ -76,14 +123,26 @@ public class AuthController {
             if (token.equals(storedToken)) {
                 userBrowserSessions.computeIfAbsent(email, k -> new ConcurrentHashMap<>()).put(browserId, true);
 
-                logger.info("Token validation successful - Email: {}, BrowserId: {}", email, browserId);
+                // Get the user's role from the token
+                String role = jwtUtil.extractRole(token);
 
-                return new LoginResponse(token, email, browserId, userCounters.getOrDefault(email, 0), false, "Login successful");
+                logger.info("Token validation successful - Email: {}, BrowserId: {}, Role: {}", email, browserId, role);
+
+                return new LoginResponse(
+                        token,
+                        email,
+                        browserId,
+                        userCounters.getOrDefault(email, 0),
+                        false,
+                        "Login successful",
+                        role  // Include the actual role from the token
+                );
             }
         }
         logger.warn("Token validation failed for token: {}", token);
         throw new IllegalArgumentException("Invalid token.");
     }
+
 
     /**
      * Logs out a user from either a single browser session or all sessions.
@@ -142,6 +201,7 @@ public class AuthController {
 
 
 
+
 /**
      * Request class for counter increment operation.
      */
@@ -152,6 +212,47 @@ public class AuthController {
         public void setToken(String token) { this.token = token; }
     }
 
+    static class AddUserRequest {
+        private String email;
+        private String username;
+
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+    }
+
+    static class LoginResponse {
+        private String token;
+        private String username;
+        private String browserId;
+        private int counter;
+        private boolean error;
+        private String msg;
+        private String role;
+
+        public LoginResponse(String token, String username, String browserId,
+                             int counter, boolean error, String msg, String role) {
+            this.token = token;
+            this.username = username;
+            this.browserId = browserId;
+            this.counter = counter;
+            this.error = error;
+            this.msg = msg;
+            this.role = role;
+        }
+
+        // Add getters and setters
+        public String getToken() { return token; }
+        public String getUsername() { return username; }
+        public String getBrowserId() { return browserId; }
+        public int getCounter() { return counter; }
+        public boolean isError() { return error; }
+        public String getMsg() { return msg; }
+        public String getRole() {
+            return role;
+        }
+    }
     /**
      * Response class for counter increment operation.
      */
@@ -190,31 +291,6 @@ public class AuthController {
     /**
      * Response class for login and token validation operations.
      */
-    static class LoginResponse {
-        private String token;
-        private String username;
-        private String browserId;
-        private int counter;
-        private boolean error;
-        private String msg;
-
-        public LoginResponse(String token, String username, String browserId,
-                             int counter, boolean error, String msg) {
-            this.token = token;
-            this.username = username;
-            this.browserId = browserId;
-            this.counter = counter;
-            this.error = error;
-            this.msg = msg;
-        }
-
-        public String getToken() { return token; }
-        public String getUsername() { return username; }
-        public String getBrowserId() { return browserId; }
-        public int getCounter() { return counter; }
-        public boolean isError() { return error; }
-        public String getMsg() { return msg; }
-    }
 
     /**
      * Request class for logout operation.

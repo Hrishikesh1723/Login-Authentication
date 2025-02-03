@@ -8,30 +8,25 @@ import org.springframework.stereotype.Component;
 
 import java.security.Key;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
-/**
- * Utility class for handling JWT (JSON Web Token) operations such as
- * token generation, extraction, and validation.
- */
 @Component
 public class JwtUtil {
-
     private static final Logger logger = LoggerFactory.getLogger(JwtUtil.class);
     private static final Key SECRET_KEY = Keys.secretKeyFor(SignatureAlgorithm.HS256);
 
-    /**
-     * Generates a JWT token for a given username.
-     *
-     * @param username the username for which the token is generated
-     * @return a signed JWT token
-     */
-    public String generateToken(String username) {
+    public String generateToken(String username, String role) {
         try {
-            logger.info("Generating JWT token for username: {}", username);
+            logger.info("Generating JWT token for username: {} with role: {}", username, role);
+            Map<String, Object> claims = new HashMap<>();
+            claims.put("role", role);
+
             return Jwts.builder()
+                    .setClaims(claims)
                     .setSubject(username)
                     .setIssuedAt(new Date(System.currentTimeMillis()))
-                    .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60 * 10)) // 10 hours expiration
+                    .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60 * 10))
                     .signWith(SECRET_KEY)
                     .compact();
         } catch (JwtException ex) {
@@ -40,12 +35,6 @@ public class JwtUtil {
         }
     }
 
-    /**
-     * Extracts the username from the provided JWT token.
-     *
-     * @param token the JWT token
-     * @return the username contained in the token
-     */
     public String extractUsername(String token) {
         try {
             logger.debug("Extracting username from JWT token");
@@ -59,12 +48,16 @@ public class JwtUtil {
         }
     }
 
-    /**
-     * Validates a JWT token by checking its expiration and username extraction.
-     *
-     * @param token the JWT token to validate
-     * @return true if the token is valid, false otherwise
-     */
+    public String extractRole(String token) {
+        try {
+            logger.debug("Extracting role from JWT token");
+            return getClaims(token).get("role", String.class);
+        } catch (JwtException ex) {
+            logger.error("Error extracting role from JWT token: {}", ex.getMessage());
+            throw ex;
+        }
+    }
+
     public boolean isValidToken(String token) {
         try {
             logger.debug("Validating JWT token");
@@ -75,12 +68,6 @@ public class JwtUtil {
         }
     }
 
-    /**
-     * Extracts claims from the given JWT token.
-     *
-     * @param token the JWT token
-     * @return claims extracted from the token
-     */
     private Claims getClaims(String token) {
         try {
             logger.debug("Extracting claims from JWT token");
@@ -89,21 +76,12 @@ public class JwtUtil {
                     .build()
                     .parseClaimsJws(token)
                     .getBody();
-        } catch (ExpiredJwtException ex) {
-            logger.warn("JWT token expired while extracting claims: {}", ex.getMessage());
-            throw ex;
         } catch (JwtException ex) {
             logger.error("Error extracting claims from JWT token: {}", ex.getMessage());
             throw ex;
         }
     }
 
-    /**
-     * Checks if the JWT token has expired.
-     *
-     * @param token the JWT token
-     * @return true if the token is expired, false otherwise
-     */
     private boolean isTokenExpired(String token) {
         try {
             logger.debug("Checking if JWT token is expired");
