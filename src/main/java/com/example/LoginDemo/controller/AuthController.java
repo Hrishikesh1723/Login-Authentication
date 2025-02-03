@@ -1,6 +1,7 @@
 package com.example.LoginDemo.controller;
 
 import com.example.LoginDemo.service.EmailService;
+import io.jsonwebtoken.JwtException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,48 +64,64 @@ public class AuthController {
         throw new IllegalArgumentException("Invalid email format.");
     }
 
+    /**
+     * Adds a new user. Only admin users can perform this action.
+     *
+     * @param request the user details
+     * @param token   the authentication token
+     * @return a response indicating whether the user was added successfully
+     */
     @PostMapping("/add-user")
     public ResponseEntity<?> addUser(@RequestBody AddUserRequest request, @RequestHeader("Authorization") String token) {
-        if (!token.startsWith("Bearer ")) {
-            return ResponseEntity.badRequest().body("Invalid token format");
-        }
-
-        String jwtToken = token.substring(7);
-        if (!jwtUtil.isValidToken(jwtToken) || !"ADMIN".equals(jwtUtil.extractRole(jwtToken))) {
-            return ResponseEntity.status(403).body("Unauthorized access");
-        }
-
         try {
+            if (!token.startsWith("Bearer ")) {
+                throw new JwtException("Invalid token format");
+            }
+            String jwtToken = token.substring(7);
+            if (!jwtUtil.isValidToken(jwtToken) || !"ADMIN".equals(jwtUtil.extractRole(jwtToken))) {
+                throw new JwtException("Unauthorized access");
+            }
             authService.addUser(request.getEmail(), request.getUsername(), "USER");
             return ResponseEntity.ok("User added successfully");
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            logger.error("Error adding user: {}", e.getMessage());
+            throw e;
         }
     }
 
+    /**
+     * Fetches all non-admin users.
+     *
+     * @param token the authentication token
+     * @return a response containing user details
+     */
     @GetMapping("/users")
     public ResponseEntity<?> getAllUsers(@RequestHeader("Authorization") String token) {
-        if (!token.startsWith("Bearer ")) {
-            return ResponseEntity.badRequest().body("Invalid token format");
-        }
-
-        String jwtToken = token.substring(7);
-        if (!jwtUtil.isValidToken(jwtToken) || !"ADMIN".equals(jwtUtil.extractRole(jwtToken))) {
-            return ResponseEntity.status(403).body("Unauthorized access");
-        }
-
-        Map<String, Map<String, Object>> userDetails = new HashMap<>();
-        authService.getAllUsers().forEach((email, userInfo) -> {
-            if (!"admin".equalsIgnoreCase(userInfo.getRole())) { // Exclude admin role
-                Map<String, Object> details = new HashMap<>();
-                details.put("username", userInfo.getUsername());
-                details.put("role", userInfo.getRole());
-                details.put("counter", userCounters.getOrDefault(email, 0));
-                userDetails.put(email, details);
+        try {
+            if (!token.startsWith("Bearer ")) {
+                throw new JwtException("Invalid token format");
             }
-        });
+            String jwtToken = token.substring(7);
+            if (!jwtUtil.isValidToken(jwtToken) || !"ADMIN".equals(jwtUtil.extractRole(jwtToken))) {
+                throw new JwtException("Unauthorized access");
+            }
 
-        return ResponseEntity.ok(userDetails);
+            Map<String, Map<String, Object>> userDetails = new HashMap<>();
+            authService.getAllUsers().forEach((email, userInfo) -> {
+                if (!"admin".equalsIgnoreCase(userInfo.getRole())) {
+                    Map<String, Object> details = new HashMap<>();
+                    details.put("username", userInfo.getUsername());
+                    details.put("role", userInfo.getRole());
+                    details.put("counter", userCounters.getOrDefault(email, 0));
+                    userDetails.put(email, details);
+                }
+            });
+
+            return ResponseEntity.ok(userDetails);
+        } catch (Exception e) {
+            logger.error("Error fetching users: {}", e.getMessage());
+            throw e;
+        }
     }
 
     /**
@@ -199,10 +216,7 @@ public class AuthController {
         throw new IllegalArgumentException("Invalid token for counter increment.");
     }
 
-
-
-
-/**
+    /**
      * Request class for counter increment operation.
      */
     static class IncrementRequest {

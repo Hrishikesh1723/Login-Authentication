@@ -11,11 +11,21 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Utility class for handling JWT operations such as generation, validation, and extraction of claims.
+ */
 @Component
 public class JwtUtil {
     private static final Logger logger = LoggerFactory.getLogger(JwtUtil.class);
     private static final Key SECRET_KEY = Keys.secretKeyFor(SignatureAlgorithm.HS256);
 
+    /**
+     * Generates a JWT token for a given username and role.
+     *
+     * @param username the username for which the token is generated
+     * @param role the role associated with the user
+     * @return the generated JWT token
+     */
     public String generateToken(String username, String role) {
         try {
             logger.info("Generating JWT token for username: {} with role: {}", username, role);
@@ -35,6 +45,12 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Extracts the username from a given JWT token.
+     *
+     * @param token the JWT token
+     * @return the username extracted from the token
+     */
     public String extractUsername(String token) {
         try {
             logger.debug("Extracting username from JWT token");
@@ -48,6 +64,12 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Extracts the role from a given JWT token.
+     *
+     * @param token the JWT token
+     * @return the role extracted from the token
+     */
     public String extractRole(String token) {
         try {
             logger.debug("Extracting role from JWT token");
@@ -58,6 +80,12 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Validates a JWT token by checking its username and expiration.
+     *
+     * @param token the JWT token to validate
+     * @return true if the token is valid, false otherwise
+     */
     public boolean isValidToken(String token) {
         try {
             logger.debug("Validating JWT token");
@@ -68,6 +96,12 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Extracts claims from a JWT token.
+     *
+     * @param token the JWT token
+     * @return the claims extracted from the token
+     */
     private Claims getClaims(String token) {
         try {
             logger.debug("Extracting claims from JWT token");
@@ -82,6 +116,12 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Checks whether a JWT token has expired.
+     *
+     * @param token the JWT token to check
+     * @return true if the token has expired, false otherwise
+     */
     private boolean isTokenExpired(String token) {
         try {
             logger.debug("Checking if JWT token is expired");
