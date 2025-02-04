@@ -1,118 +1,172 @@
 package com.example.LoginDemo.service;
 
-import com.example.LoginDemo.exception.GlobalExceptionHandler;
+import com.example.LoginDemo.dao.UserDAO;
+import com.example.LoginDemo.model.User;
+import com.example.LoginDemo.model.UserSession;
+import com.example.LoginDemo.dao.UserSessionDAO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 
 /**
- * Service class for handling authentication and user management.
+ * Authentication Service to handle user authentication and session management.
  */
 @Service
 public class AuthService {
+
     private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
 
-    private static final Map<String, UserInfo> VALID_USERS = new HashMap<>();
-    private static final ConcurrentHashMap<String, String> pendingLogins = new ConcurrentHashMap<>();
+    @Autowired
+    private UserDAO userDAO;
 
-    static {
-        // Predefined users with roles
-        VALID_USERS.put("hrishikesh.r@ahduni.edu.in", new UserInfo("Admin User", "ADMIN"));
-        VALID_USERS.put("hrishikeshrana1723@gmail.com", new UserInfo("Test User", "USER"));
-    }
+    @Autowired
+    private UserSessionDAO sessionDAO;
 
     /**
-     * Checks if the given email exists in the user database.
+     * Checks if an email exists in the database.
      *
-     * @param email the email to validate
+     * @param email the email to check
      * @return true if the email exists, false otherwise
      */
+    @Transactional(readOnly = true)
     public boolean isValidEmail(String email) {
-        try {
-            boolean isValid = VALID_USERS.containsKey(email);
-            logger.info("Email validation check - Email: {}, Valid: {}", email, isValid);
-            return isValid;
-        } catch (Exception e) {
-            logger.error("Error while validating email: {}", email, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error during email validation");
+        logger.info("Checking if email exists: {}", email);
+        return userDAO.existsByEmail(email);
+    }
+
+    /**
+     * Retrieves a user by email.
+     *
+     * @param email the email to search for
+     * @return the User object
+     */
+    @Transactional(readOnly = true)
+    public User getUserByEmail(String email) {
+        logger.info("Fetching user by email: {}", email);
+        return userDAO.findByEmail(email)
+                .orElseThrow(() -> {
+                    logger.error("User not found with email: {}", email);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+                });
+    }
+
+    /**
+     * Updates the authentication token of a user.
+     *
+     * @param email the user's email
+     * @param token the new token
+     */
+    @Transactional
+    public void updateUserToken(String email, String token) {
+        logger.info("Updating user token for email: {}", email);
+        User user = getUserByEmail(email);
+        user.setCurrentToken(token);
+        userDAO.save(user);
+    }
+
+    /**
+     * Adds a user session to track login activity.
+     *
+     * @param email the user's email
+     * @param browserId the browser identifier
+     */
+    @Transactional
+    public void addUserSession(String email, String browserId) {
+        logger.info("Adding user session for email: {}, browserId: {}", email, browserId);
+        User user = getUserByEmail(email);
+        UserSession session = new UserSession();
+        session.setUser(user);
+        session.setBrowserId(browserId);
+        session.setActive(true);
+        sessionDAO.save(session);
+    }
+
+    /**
+     * Logs out a user session, either a specific session or all sessions.
+     *
+     * @param email the user's email
+     * @param browserId the browser identifier
+     * @param logoutAll flag to determine if all sessions should be logged out
+     */
+    @Transactional
+    public void logout(String email, String browserId, boolean logoutAll) {
+        logger.info("Logging out user: {}, logoutAll: {}", email, logoutAll);
+        if (logoutAll) {
+            List<UserSession> sessions = sessionDAO.findByUserEmailAndActive(email, true);
+            sessions.forEach(session -> session.setActive(false));
+            sessionDAO.saveAll(sessions);
+
+            User user = getUserByEmail(email);
+            user.setCurrentToken(null);
+            user.setCounter(0);
+            userDAO.save(user);
+        } else {
+            List<UserSession> sessions_bid = sessionDAO.findByUserEmailAndBrowserIdAndActive(email, browserId, true);
+            sessions_bid.forEach(session -> {
+                session.setActive(false);
+            });
+            sessionDAO.saveAll(sessions_bid);
+            List<UserSession> sessions = sessionDAO.findByUserEmailAndActive(email, true);
+            if(sessions.isEmpty()) {
+                User user = getUserByEmail(email);
+                user.setCurrentToken(null);
+                user.setCounter(0);
+                userDAO.save(user);
+            }
         }
     }
 
     /**
-     * Retrieves user information by email.
-     *
+     * Increments the login attempt counter for a user.
      * @param email the user's email
-     * @return UserInfo object if found, null otherwise
+     * @return the updated counter value
      */
-    public UserInfo getUserInfo(String email) {
-        try {
-            if (!VALID_USERS.containsKey(email)) {
-                logger.warn("User not found for email: {}", email);
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-            }
-            UserInfo userInfo = VALID_USERS.get(email);
-            logger.info("Fetching user info for email: {}, Found: {}", email, (userInfo != null));
-            return userInfo;
-        } catch (Exception e) {
-            logger.error("Error while fetching user info for email: {}", email, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error retrieving user info");
-        }
+    @Transactional
+    public int incrementCounter(String email) {
+        logger.info("Incrementing counter for user: {}", email);
+        User user = getUserByEmail(email);
+        user.setCounter(user.getCounter() + 1);
+        userDAO.save(user);
+        return user.getCounter();
+    }
+
+    /**
+     * Retrieves all users from the database.
+     * @return List of all users
+     */
+    @Transactional(readOnly = true)
+    public List<User> getAllUsers() {
+        logger.info("Fetching all users");
+        return userDAO.findAll();
     }
 
     /**
      * Adds a new user to the database.
      *
-     * @param email    the user's email
-     * @param username the user's name
-     * @param role     the user's role
+     * @param email user's email
+     * @param username user's name
+     * @param role user's role
      */
+    @Transactional
     public void addUser(String email, String username, String role) {
-        try {
-            if (VALID_USERS.containsKey(email)) {
-                logger.warn("Attempt to add duplicate user: {}", email);
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "User already exists");
-            }
-            VALID_USERS.put(email, new UserInfo(username, role));
-            logger.info("Added new user - Email: {}, Username: {}, Role: {}", email, username, role);
-        } catch (Exception e) {
-            logger.error("Error while adding user: {}", email, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error adding user");
-        }
-    }
-
-    /**
-     * Retrieves all registered users.
-     *
-     * @return a map of email addresses and corresponding user information
-     */
-    public Map<String, UserInfo> getAllUsers() {
-        return new HashMap<>(VALID_USERS);
-    }
-
-    /**
-     * Inner class representing user information.
-     */
-    public static class UserInfo {
-        private final String username;
-        private final String role;
-
-        public UserInfo(String username, String role) {
-            this.username = username;
-            this.role = role;
+        logger.info("Adding new user: email={}, username={}, role={}", email, username, role);
+        if (userDAO.existsByEmail(email)) {
+            logger.warn("User already exists with email: {}", email);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "User already exists");
         }
 
-        public String getUsername() {
-            return username;
-        }
+        User newUser = new User();
+        newUser.setEmail(email);
+        newUser.setUsername(username);
+        newUser.setRole(role);
+        newUser.setCounter(0);
 
-        public String getRole() {
-            return role;
-        }
+        userDAO.save(newUser);
     }
 }
