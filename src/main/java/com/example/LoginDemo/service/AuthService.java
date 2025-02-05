@@ -71,6 +71,18 @@ public class AuthService {
     }
 
     /**
+     * Checks that particular browser has any active session
+     *
+     * @param browserId the browser identifier
+     * @return true if the session exists, false otherwise
+     */
+    @Transactional(readOnly = true)
+    public boolean isActiveBrowserSession(String browserId){
+        logger.info("Checking active session for browserid: {}", browserId);
+        return  sessionDAO.browserSessionActive(browserId);
+    }
+
+    /**
      * Adds a user session to track login activity.
      *
      * @param email the user's email
@@ -138,6 +150,7 @@ public class AuthService {
 
     /**
      * Retrieves all users from the database.
+     *
      * @return List of all users
      */
     @Transactional(readOnly = true)

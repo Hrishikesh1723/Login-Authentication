@@ -41,9 +41,8 @@ public class AuthController {
     @PostMapping("/login")
     public LoginResponse login(@RequestBody LoginRequest request) {
         String email = request.getEmail();
-        String browserId = request.getBrowserId();
 
-        logger.info("Login attempt - Email: {}, BrowserId: {}", email, browserId);
+        logger.info("Login attempt - Email: {}", email);
 
         if (authService.isValidEmail(email)) {
             User user = authService.getUserByEmail(email);
@@ -76,7 +75,9 @@ public class AuthController {
 
             if (token.equals(user.getCurrentToken())) {
                 // Add browser session to database
-                authService.addUserSession(email, browserId);
+                if(!authService.isActiveBrowserSession(browserId)){
+                    authService.addUserSession(email, browserId);
+                }
 
                 String role = jwtUtil.extractRole(token);
                 logger.info("Token validation successful - Email: {}, BrowserId: {}, Role: {}",
